@@ -806,7 +806,7 @@ def main():
     """Main execution function"""
     
     # Configuration
-    CHECKPOINT_PATH = 'checkpoints/fingat-epoch=00-val_mrr=1.0000-v1.ckpt'
+    CHECKPOINT_PATH = 'checkpoints/fingat-epoch=09-val_mrr=1.0000.ckpt'
     DATA_PATH = 'indian_data'
     TOP_K = [5, 10, 20]
     
