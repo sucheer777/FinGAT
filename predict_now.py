@@ -635,7 +635,7 @@ class TomorrowPredictor:
         
         return torch.tensor(edge_list, dtype=torch.long, device=device).t()
     
-    @torch.no_grad()  # ✅ FIX: Removed duplicate decorators
+    
     @torch.no_grad()
     def predict_all_stocks(self):
         """Generate predictions for all stocks"""
@@ -656,29 +656,24 @@ class TomorrowPredictor:
         movement_probs = torch.softmax(movement_logits, dim=1)
         up_probability = movement_probs[:, 1].cpu().numpy()
         
-        # ✅✅ CRITICAL FIX: Flip the probabilities!
-        # Model outputs are inverted, so invert them back
-        up_probability = 1.0 - up_probability
-        
-        # Now use median threshold on flipped probabilities
+        # Use median threshold
         median_prob = np.median(up_probability)
         predicted_direction = (up_probability > median_prob).astype(int)
         confidence = np.abs(up_probability - median_prob) * 200
         
         print(f"\n📊 Median UP probability: {median_prob:.3f}")
-        print(f"   Using this as threshold for balanced predictions")
-        print(f"   UP probability range (after flip): {up_probability.min():.3f} - {up_probability.max():.3f}")
+        print(f"   UP probability range: {up_probability.min():.3f} - {up_probability.max():.3f}")
         
-        returns_pred = returns_pred.squeeze().cpu().numpy()
-        ranking_scores = ranking_scores.squeeze().cpu().numpy()
+        # ✅ FIX: Flatten arrays to ensure 1D
+        returns_pred = returns_pred.cpu().numpy().flatten()
+        ranking_scores = ranking_scores.cpu().numpy().flatten()
         
         # Get stock info
         tickers = list(self.metadata['idx_to_ticker'].values())
         sectors = [self.metadata['sectors'].get(ticker, 'Other') for ticker in tickers]
         
-        # Create results
+        # Create results DataFrame
         results_df = pd.DataFrame({
-            'Rank': 0,
             'Ticker': tickers,
             'Sector': sectors,
             'Direction': ['UP' if d == 1 else 'DOWN' for d in predicted_direction],
@@ -688,26 +683,43 @@ class TomorrowPredictor:
             'UP_Probability': up_probability,
         })
         
-        # Sort by ranking score DESCENDING
-        results_df = results_df.sort_values('Ranking_Score', ascending=False).reset_index(drop=True)
-        results_df['Rank'] = range(1, len(results_df) + 1)
+        # ✅ FILTER ONLY UP STOCKS BEFORE RANKING
+        up_stocks = results_df[results_df['Direction'] == 'UP'].copy()
+        down_stocks = results_df[results_df['Direction'] == 'DOWN'].copy()
+        
+        # Sort UP stocks by ranking score (descending)
+        up_stocks = up_stocks.sort_values('Ranking_Score', ascending=False).reset_index(drop=True)
+        up_stocks['Rank'] = range(1, len(up_stocks) + 1)
+        
+        # Sort DOWN stocks by ranking score (descending)
+        down_stocks = down_stocks.sort_values('Ranking_Score', ascending=False).reset_index(drop=True)
+        down_stocks['Rank'] = range(len(up_stocks) + 1, len(up_stocks) + len(down_stocks) + 1)
+        
+        # Combine: UP stocks first, then DOWN stocks
+        results_df = pd.concat([up_stocks, down_stocks], ignore_index=True)
         
         # Print balance
-        up_count = (predicted_direction == 1).sum()
-        down_count = (predicted_direction == 0).sum()
+        up_count = len(up_stocks)
+        down_count = len(down_stocks)
+        total = len(results_df)
+        
         print(f"\n✅ Prediction Balance:")
-        print(f"   UP: {up_count} ({up_count/len(predicted_direction)*100:.1f}%)")
-        print(f"   DOWN: {down_count} ({down_count/len(predicted_direction)*100:.1f}%)")
+        print(f"   UP: {up_count} ({up_count/total*100:.1f}%)")
+        print(f"   DOWN: {down_count} ({down_count/total*100:.1f}%)")
         
         # Check top-20 balance
-        top_20_up = (results_df.head(20)['Direction'] == 'UP').sum()
+        top_20 = results_df.head(20)
+        top_20_up = (top_20['Direction'] == 'UP').sum()
         print(f"\n📊 Top-20 Balance:")
         print(f"   UP: {top_20_up}/20 ({top_20_up/20*100:.1f}%)")
         print(f"   DOWN: {20-top_20_up}/20 ({(20-top_20_up)/20*100:.1f}%)")
         
         print(f"\n✅ Predictions completed for {len(results_df)} stocks")
+        print(f"   UP stocks ranked: 1-{up_count}")
+        print(f"   DOWN stocks ranked: {up_count+1}-{total}")
         
         return results_df
+
 
     
     def display_top_recommendations(self, results_df, top_k_list=[5, 10, 20]):
