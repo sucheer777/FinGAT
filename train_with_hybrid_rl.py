@@ -443,7 +443,7 @@ def train_with_hybrid_rl():
         )
         
         trainer_final = pl.Trainer(
-            max_epochs=100,
+            max_epochs=50,
             accelerator='auto',
             devices='auto',
             callbacks=[checkpoint_callback, early_stop],
