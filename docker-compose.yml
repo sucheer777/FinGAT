@@ -1,0 +1,61 @@
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: fikant
+      POSTGRES_PASSWORD: fikantpass
+      POSTGRES_DB: fikantdb
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  mlflow:
+    build:
+      context: .
+      dockerfile: automation/docker/Dockerfile.mlflow
+    depends_on:
+      - postgres
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./mlflow:/mlflow
+
+  n8n:
+    image: n8nio/n8n
+    volumes:
+      - ./data:/root/.n8n/data
+    ports:
+      - "5678:5678"
+
+  fetcher:
+    build:
+      context: .
+      dockerfile: automation/docker/Dockerfile.fetcher
+    environment:
+      ALPHA_VANTAGE_KEY: "your_api_key"
+    volumes:
+      - ./data:/data
+    # keep container idle by default; n8n will run the fetcher container with the proper CLI args
+    entrypoint: ["/bin/sh", "-c", "while true; do sleep 3600; done"]
+
+  trainer:
+    build:
+      context: .
+      dockerfile: automation/docker/Dockerfile.trainer
+    # Mount data (CSV, reports) into /data and persist checkpoints to ./checkpoints
+    volumes:
+      # Mount the repository into /app so trainer has access to project modules
+      - ./:/app
+      - ./data:/data
+      - ./checkpoints:/app/checkpoints
+    environment:
+      - PYTHONPATH=/app
+    depends_on:
+      - fetcher
+      - mlflow
+    # run the wrapper inside the mounted repo
+    entrypoint: ["python", "/app/automation/train_and_report.py"]
+
+volumes:
+  postgres-data:
