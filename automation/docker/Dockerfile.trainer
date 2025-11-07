@@ -1,0 +1,8 @@
+FROM python:3.9-slim
+WORKDIR /app
+# copy the repo's train.py and the project's requirements.txt
+COPY train.py /app/
+COPY requirements.txt /app/
+COPY automation/train_and_report.py /app/
+RUN pip install --no-cache-dir -r requirements.txt
+ENTRYPOINT ["python", "train_and_report.py"]

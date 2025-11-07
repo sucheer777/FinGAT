@@ -1,0 +1,425 @@
+{
+  "name": "FinGAT Full Pipeline (fixed attachments + Merge Wait + Gmail SMTP)",
+  "nodes": [
+    {
+      "parameters": {
+        "triggerTimes": {
+          "item": [
+            {
+              "hour": 18,
+              "minute": 30
+            }
+          ]
+        }
+      },
+      "id": "3f579398-ba19-489b-ac01-89d50f86a1c0",
+      "name": "Cron Trigger (6:30 PM IST)",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        -3888,
+        736
+      ]
+    },
+    {
+      "parameters": {
+        "command": "docker run --rm -v C:/Users/hp/Downloads/modern_fingat_2025:/app --entrypoint sh custom_fetcher:latest -c \"python /app/automation/fetch_live_data.py --tickers-from-dir /app/indian_data --outdir /app/indian_data --single_csv /app/data/latest_stock_data.csv && echo FETCH_OK\""
+      },
+      "id": "ddd8665d-9c7a-4450-ab81-19d6b089dc39",
+      "name": "Run Fetcher",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        -3616,
+        752
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json[\"stdout\"] + $json[\"stderr\"] }}",
+              "operation": "contains",
+              "value2": "FETCH_OK"
+            }
+          ]
+        }
+      },
+      "id": "5e2a06d2-00ed-4be9-b3d7-34b3b116203e",
+      "name": "If Fetch Success",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        -3344,
+        752
+      ]
+    },
+    {
+      "parameters": {
+        "command": "docker run --rm -v C:/Users/hp/Downloads/modern_fingat_2025:/app -v C:/Users/hp/Downloads/modern_fingat_2025/data:/data --entrypoint sh custom_trainer:latest -c \"python /app/automation/train_and_report.py --out-report /data/automation_report.json && echo TRAIN_OK\""
+      },
+      "id": "84f0944c-ebcd-400e-a0fc-a8353deb9401",
+      "name": "Run Trainer",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        -3056,
+        672
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json[\"stdout\"] + $json[\"stderr\"] }}",
+              "operation": "contains",
+              "value2": "TRAIN_OK"
+            }
+          ]
+        }
+      },
+      "id": "62b38f02-ab88-47e5-a35a-bfcc2ee8f8cf",
+      "name": "If Train Success",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        -2816,
+        704
+      ]
+    },
+    {
+      "parameters": {
+        "command": "docker run --rm -v C:/Users/hp/Downloads/modern_fingat_2025:/app -v C:/Users/hp/Downloads/modern_fingat_2025/data:/data --entrypoint sh custom_trainer:latest -c \"python /app/predict_now.py > /data/predict_output.txt 2>&1 && echo PRED_OK\""
+      },
+      "id": "63c492bb-cedc-4430-a96b-205b5acc04a1",
+      "name": "Run Predictor",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        -2528,
+        672
+      ]
+    },
+    {
+      "parameters": {
+        "filePath": "C:/Users/hp/Downloads/modern_fingat_2025/data/top_stocks.txt"
+      },
+      "id": "9e245fc9-9db7-4b03-8e7a-075693d03c49",
+      "name": "Read Top Stocks",
+      "type": "n8n-nodes-base.readBinaryFile",
+      "typeVersion": 1,
+      "position": [
+        -2240,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "command": "powershell -Command \"Get-ChildItem -Path 'C:\\Users\\hp\\Downloads\\modern_fingat_2025\\checkpoints' -Filter '*.ckpt' | Sort-Object LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName\""
+      },
+      "id": "0b73d0fc-e743-495e-91a9-b4404b55e2a6",
+      "name": "Find Latest Checkpoint (PowerShell)",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        -2288,
+        784
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{ json: { best_ckpt: ($json[\"stdout\"] || '').trim() } }];"
+      },
+      "id": "50402495-68ac-4089-96ff-b7976bfcba2b",
+      "name": "Parse Checkpoint Path",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        -2112,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "filePath": "={{ $json[\"best_ckpt\"] }}"
+      },
+      "id": "565c57dd-e6b1-473b-8c8e-0062003b0441",
+      "name": "Read Latest Checkpoint",
+      "type": "n8n-nodes-base.readBinaryFile",
+      "typeVersion": 1,
+      "position": [
+        -1872,
+        816
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "35ebe835-338c-447e-8e20-da514e639e44",
+      "name": "Merge (Combine Both Files)",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 1,
+      "position": [
+        -1680,
+        704
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "Fingat393@gmail.com",
+        "toEmail": "sharanya131511@gmail.com",
+        "subject": "={{ 'FinGAT: FAILURE - ' + $now.toFormat('yyyy-LL-dd') }}",
+        "text": "={{ 'FinGAT pipeline failed. Node output:\\n' + ($json['stdout'] || $json['stderr'] || JSON.stringify($json)) }}",
+        "options": {}
+      },
+      "id": "ecd77592-ac2f-45e8-be8a-6f6ae30ff4b7",
+      "name": "Send Failure Email (Gmail SMTP)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [
+        -2832,
+        992
+      ],
+      "webhookId": "677c346f-34e1-422f-8339-2f47bacbd9d8",
+      "credentials": {
+        "smtp": {
+          "id": "nqCPiJtYVEykG8BO",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const binaryKeys = Object.keys(items[0].binary || {});\nreturn [\n  {\n    json: {\n      payload: \"FinGAT pipeline completed successfully. Files attached.\",\n      attachments: binaryKeys.join(','),  // e.g. \"topstocks,checkpoint\"\n    },\n    binary: items[0].binary,\n    \n  },\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1232,
+        688
+      ],
+      "id": "f7db1e72-00c7-4273-96c6-70dd88802819",
+      "name": "prepare Attachments for Gmail"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Fetch both items (from Merge or directly)\nconst topStock = items[0];\nconst checkpoint = items[1];\n\n// Ensure both binaries exist\nif (!topStock.binary?.data || !checkpoint.binary?.data) {\n  return [\n    {\n      json: { payload: \"⚠️ Missing one or more attachments.\" }\n    }\n  ];\n}\n\n// 🧩 Build clean binary output for both attachments\nreturn items.map(item => {\n  return {\n    json: {\n      payload: \"FinGAT pipeline completed successfully. Files attached.\"\n    },\n    binary: item.binary,  // keep the binary files here\n  };\n});\n\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1472,
+        704
+      ],
+      "id": "ff47a8be-1e7b-44be-81c2-00adcd131c59",
+      "name": "Function node"
+    },
+    {
+      "parameters": {
+        "fromEmail": "Fingat393@gmail.com",
+        "toEmail": "sharanya131511@gmail.com",
+        "subject": "={{ 'FinGAT: Daily Report - ' + $now.toFormat('yyyy-LL-dd') }}",
+        "emailFormat": "text",
+        "text": "={{ 'Hello Team,\\n\\nFinGAT pipeline completed successfully.\\n\\nSummary:\\n' + $json['payload'] + '\\n\\nAttachments:\\n- top_stocks.txt (Top 5 stocks)\\n- Latest checkpoint (.ckpt)\\n\\nRegards,\\nFinGAT Automation' }}",
+        "options": {
+          "attachments": "={{ Object.keys($binary).join(',') }}\n",
+          "bccEmail": "sucheercholleti@gmail.com"
+        }
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        -992,
+        688
+      ],
+      "id": "5182d0d1-a91a-498d-afcc-50afe5bb9404",
+      "name": "Send email",
+      "webhookId": "7293bd7e-4d36-4c8f-991c-671c41390860",
+      "retryOnFail": false,
+      "notesInFlow": true,
+      "credentials": {
+        "smtp": {
+          "id": "nqCPiJtYVEykG8BO",
+          "name": "SMTP account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Cron Trigger (6:30 PM IST)": {
+      "main": [
+        [
+          {
+            "node": "Run Fetcher",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Fetcher": {
+      "main": [
+        [
+          {
+            "node": "If Fetch Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Fetch Success": {
+      "main": [
+        [
+          {
+            "node": "Run Trainer",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Failure Email (Gmail SMTP)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Trainer": {
+      "main": [
+        [
+          {
+            "node": "If Train Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Train Success": {
+      "main": [
+        [
+          {
+            "node": "Run Predictor",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Failure Email (Gmail SMTP)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Predictor": {
+      "main": [
+        [
+          {
+            "node": "Read Top Stocks",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Find Latest Checkpoint (PowerShell)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Top Stocks": {
+      "main": [
+        [
+          {
+            "node": "Merge (Combine Both Files)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Latest Checkpoint (PowerShell)": {
+      "main": [
+        [
+          {
+            "node": "Parse Checkpoint Path",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Checkpoint Path": {
+      "main": [
+        [
+          {
+            "node": "Read Latest Checkpoint",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Latest Checkpoint": {
+      "main": [
+        [
+          {
+            "node": "Merge (Combine Both Files)",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge (Combine Both Files)": {
+      "main": [
+        [
+          {
+            "node": "Function node",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "prepare Attachments for Gmail": {
+      "main": [
+        [
+          {
+            "node": "Send email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Function node": {
+      "main": [
+        [
+          {
+            "node": "prepare Attachments for Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "b158275b-b653-4abe-9170-7c5ad965f31b",
+  "meta": {
+    "instanceId": "87afe0bd88f54312d770e50cb16e8b9c4cf0a8f1a2552171ddab7cd2c55c977f"
+  },
+  "id": "T3jUZcnkGXK5DcQM",
+  "tags": []
+}

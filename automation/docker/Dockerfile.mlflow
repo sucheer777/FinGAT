@@ -1,0 +1,9 @@
+FROM python:3.9-slim
+WORKDIR /mlflow
+# Install mlflow and postgres client for backend store
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential gcc libpq-dev && \
+    pip install --no-cache-dir mlflow psycopg2-binary && \
+    apt-get remove -y build-essential gcc && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
+
+EXPOSE 5000
+ENTRYPOINT ["mlflow", "server", "--backend-store-uri", "postgresql://fikant:fikantpass@postgres/fikantdb", "--default-artifact-root", "/mlflow/models", "--host", "0.0.0.0", "--port", "5000"]
